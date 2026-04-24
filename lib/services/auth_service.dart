@@ -183,6 +183,43 @@ class AuthService {
     return prefs.getString(_refreshTokenKey);
   }
 
+  Future<bool> refreshAccessToken() async {
+    try {
+      final refreshToken = await getRefreshToken();
+      if (refreshToken == null || refreshToken.isEmpty) return false;
+
+      final endpointCandidates = <Uri>[
+        Uri.parse('$baseUrl/api/auth/refresh'),
+        Uri.parse('$baseUrl/api/auth/refresh-token'),
+      ];
+
+      for (final url in endpointCandidates) {
+        final response = await http.post(
+          url,
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({'refreshToken': refreshToken}),
+        );
+
+        if (response.statusCode >= 200 && response.statusCode < 300) {
+          final data = jsonDecode(response.body);
+          final newAccessToken =
+              data['accessToken'] ?? data['token'] ?? data['access_token'];
+          if (newAccessToken is String && newAccessToken.isNotEmpty) {
+            await saveToken(newAccessToken);
+            if (data['refreshToken'] is String &&
+                (data['refreshToken'] as String).isNotEmpty) {
+              await saveRefreshToken(data['refreshToken'] as String);
+            }
+            return true;
+          }
+        }
+      }
+      return false;
+    } catch (_) {
+      return false;
+    }
+  }
+
   // ─── DELETE USER FROM API ─────────────────────────────────────────────────
   // ⚠️ ฟังก์ชันนี้ "ลบ user ออกจาก API จริงๆ" (ไม่ใช่แค่ logout)
   // จะเรียกใช้ก็ต่อเมื่อ deleteUser: true เท่านั้น
@@ -216,6 +253,7 @@ class AuthService {
     // ลบ token ออกจากเครื่องเสมอ (ทั้ง 2 กรณี)
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_tokenKey);
+    await prefs.remove(_refreshTokenKey);
   }
 
   Future<bool> isLoggedIn() async {

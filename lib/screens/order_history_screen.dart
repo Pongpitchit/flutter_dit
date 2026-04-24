@@ -11,6 +11,7 @@ class OrderHistoryScreen extends StatefulWidget {
 }
 
 class _OrderHistoryScreenState extends State<OrderHistoryScreen> {
+  final AuthService _authService = AuthService();
   List<Map<String, dynamic>> _orders = <Map<String, dynamic>>[];
   bool _isLoading = true;
   String? _error;
@@ -28,18 +29,21 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen> {
     });
 
     try {
-      final token = await AuthService().getToken();
-      if (token == null || token.isEmpty) {
+      http.Response? response = await _getOrdersResponse();
+      if (response == null) {
         throw Exception('ไม่พบ token การเข้าสู่ระบบ');
       }
 
-      final response = await http.get(
-        Uri.parse('https://apicoffee-flutter.vercel.app/api/orders'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $token',
-        },
-      ).timeout(const Duration(seconds: 12));
+      if (response.statusCode == 401) {
+        final refreshed = await _authService.refreshAccessToken();
+        if (!refreshed) {
+          throw Exception('เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่');
+        }
+        response = await _getOrdersResponse();
+        if (response == null) {
+          throw Exception('ไม่พบ token การเข้าสู่ระบบ');
+        }
+      }
 
       if (response.statusCode < 200 || response.statusCode >= 300) {
         throw Exception('โหลดประวัติไม่สำเร็จ (${response.statusCode})');
@@ -74,6 +78,19 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen> {
         _isLoading = false;
       });
     }
+  }
+
+  Future<http.Response?> _getOrdersResponse() async {
+    final token = await _authService.getToken();
+    if (token == null || token.isEmpty) return null;
+
+    return http.get(
+      Uri.parse('https://apicoffee-flutter.vercel.app/api/orders'),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+    ).timeout(const Duration(seconds: 12));
   }
 
   String _statusText(dynamic status) {
